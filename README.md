@@ -1,2 +1,3 @@
 # maildb
-Local mail database
+
+> Local mail database
