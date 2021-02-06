@@ -3,19 +3,49 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"log"
+	"io/ioutil"
 	"net/http"
 	"os"
+	"path"
+	"strings"
 	"time"
 
+	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
+	mconfig "github.com/mailway-app/config"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
 	SQLITE_DB string = "./dev.db"
 )
+
+func parseJWT(v string) (*jwt.Token, error) {
+	claims := new(jwt.StandardClaims)
+	token, err := jwt.ParseWithClaims(v, claims, func(token *jwt.Token) (interface{}, error) {
+		return lookupPublicKey()
+	})
+
+	if err != nil || !token.Valid {
+		return nil, errors.Wrap(err, "key failed to verify")
+	}
+	if err := token.Claims.Valid(); err != nil {
+		return nil, errors.Wrap(err, "JWT claims not valid")
+	}
+
+	return token, nil
+}
+
+func lookupPublicKey() (interface{}, error) {
+	data, err := ioutil.ReadFile(path.Join(mconfig.CONFIG_LOCATION, "key.pub"))
+	if err != nil {
+		return nil, errors.Wrap(err, "could not read key file")
+	}
+	return jwt.ParseRSAPublicKeyFromPEM(data)
+}
 
 func fileExists(filename string) bool {
 	info, err := os.Stat(filename)
@@ -94,7 +124,7 @@ func insertMail(db *sql.DB, mail Mail) error {
 
 	check(tx.Commit())
 
-	log.Printf("inserted mail %s\n", mail.Uuid)
+	log.Debugf("inserted mail %s", mail.Uuid)
 	return nil
 }
 
@@ -114,7 +144,7 @@ func updateMailEnvelope(db *sql.DB, uuid uuid.UUID, field string, value string) 
 		return err
 	}
 
-	log.Printf("updated %s %s: %s\n", uuid, field, value)
+	log.Debugf("updated %s %s: %s", uuid, field, value)
 	return nil
 }
 
@@ -134,7 +164,7 @@ func updateStatusMail(db *sql.DB, uuid uuid.UUID, newStatus int) error {
 		return err
 	}
 
-	log.Printf("updated status %s to %d\n", uuid, newStatus)
+	log.Debugf("updated status %s to %d", uuid, newStatus)
 	return nil
 }
 
@@ -159,7 +189,7 @@ func updateRuleMail(db *sql.DB, uuid uuid.UUID, rule uuid.UUID) error {
 		return err
 	}
 
-	log.Printf("updated rule %s to %s\n", uuid, rule)
+	log.Debugf("updated rule %s to %s", uuid, rule)
 	return nil
 }
 
@@ -221,6 +251,12 @@ func getMailsByDomain(db *sql.DB, domain string) ([]Mail, error) {
 }
 
 func main() {
+	c, err := mconfig.Read()
+	if err != nil {
+		log.Fatalf("could not read config: %s", err)
+	}
+	log.SetLevel(c.GetLogLevel())
+
 	var db *sql.DB
 	defer db.Close()
 
@@ -233,7 +269,7 @@ func main() {
 		db, err = sql.Open("sqlite3", SQLITE_DB)
 		check(err)
 		if err = migrateDB(db); err != nil {
-			log.Printf("migrateDB: %s\n", err)
+			log.Infof("migrateDB: %s", err)
 		}
 	} else {
 		var err error
@@ -249,6 +285,7 @@ func main() {
 	r.HandleFunc("/db/domain/{domain}/update/{uuid}", handler.UpdateDomainMail).Methods("PUT")
 	r.HandleFunc("/db/domain/{domain}/logs", handler.GetDomainLogs).Methods("GET")
 	http.Handle("/", r)
+	r.Use(authMiddleware)
 	r.Use(loggingMiddleware)
 
 	srv := &http.Server{
@@ -258,6 +295,7 @@ func main() {
 		ReadTimeout:  5 * time.Second,
 	}
 
+	log.Infof("listening on %s", srv.Addr)
 	log.Fatal(srv.ListenAndServe())
 }
 
@@ -267,7 +305,25 @@ type MailDB struct {
 
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("%s %s\n", r.Method, r.RequestURI)
+		log.Infof("%s %s\n", r.Method, r.RequestURI)
+		next.ServeHTTP(w, r)
+	})
+}
+
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization := r.Header.Get("Authorization")
+		if authorization == "" {
+			log.Debug("missing JWT token")
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		token := strings.ReplaceAll(authorization, "Bearer ", "")
+		if _, err := parseJWT(token); err != nil {
+			log.Debugf("JWT token not valid: %s", err)
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
 }
