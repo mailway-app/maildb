@@ -1,5 +1,6 @@
 VERSION = 1.0.0
 DIST = $(PWD)/dist
+FPM_ARGS =
 
 .PHONY: clean
 clean:
@@ -11,5 +12,5 @@ $(DIST)/maildb: server.go
 
 .PHONY: deb
 deb: $(DIST)/maildb
-	fpm -n maildb -s dir -t deb --chdir=$(DIST) --version=$(VERSION)
+	fpm -n maildb -s dir -t deb --chdir=$(DIST) --version=$(VERSION) $(FPM_ARGS)
 
