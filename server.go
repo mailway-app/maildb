@@ -256,6 +256,7 @@ func main() {
 		log.Fatalf("could not read config: %s", err)
 	}
 	log.SetLevel(c.GetLogLevel())
+	log.SetFormatter(c.GetLogFormat())
 
 	var db *sql.DB
 	defer db.Close()
@@ -419,6 +420,6 @@ func (h MailDB) UpdateDomainMail(w http.ResponseWriter, r *http.Request) {
 
 func check(err error) {
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 }
