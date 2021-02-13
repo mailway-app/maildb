@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	SQLITE_DB string = "./dev.db"
+	SQLITE_DB string = "./maildb.db"
 )
 
 func parseJWT(v string) (*jwt.Token, error) {
@@ -261,8 +261,8 @@ func main() {
 	var db *sql.DB
 	defer db.Close()
 
-	if val, ok := os.LookupEnv("SQLITE_DB"); ok {
-		SQLITE_DB = val
+	if c.MaildbPath != "" {
+		SQLITE_DB = c.MaildbPath
 	}
 
 	if fileExists(SQLITE_DB) {
