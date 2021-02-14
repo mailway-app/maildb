@@ -13,7 +13,7 @@ import (
 	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
-	mconfig "github.com/mailway-app/config"
+	"github.com/mailway-app/config"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -40,7 +40,7 @@ func parseJWT(v string) (*jwt.Token, error) {
 }
 
 func lookupPublicKey() (interface{}, error) {
-	data, err := ioutil.ReadFile(path.Join(mconfig.CONFIG_LOCATION, "key.pub"))
+	data, err := ioutil.ReadFile(path.Join(config.ROOT_LOCATION, "key.pub"))
 	if err != nil {
 		return nil, errors.Wrap(err, "could not read key file")
 	}
@@ -251,18 +251,15 @@ func getMailsByDomain(db *sql.DB, domain string) ([]Mail, error) {
 }
 
 func main() {
-	c, err := mconfig.Read()
-	if err != nil {
-		log.Fatalf("could not read config: %s", err)
+	if err := config.Init(); err != nil {
+		log.Fatalf("failed to init config: %s", err)
 	}
-	log.SetLevel(c.GetLogLevel())
-	log.SetFormatter(c.GetLogFormat())
 
 	var db *sql.DB
 	defer db.Close()
 
-	if c.MaildbPath != "" {
-		SQLITE_DB = c.MaildbPath
+	if config.CurrConfig.MaildbPath != "" {
+		SQLITE_DB = config.CurrConfig.MaildbPath
 	}
 
 	if fileExists(SQLITE_DB) {
@@ -315,13 +312,13 @@ func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authorization := r.Header.Get("Authorization")
 		if authorization == "" {
-			log.Debug("missing JWT token")
+			log.Warn("missing JWT token")
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
 		token := strings.ReplaceAll(authorization, "Bearer ", "")
 		if _, err := parseJWT(token); err != nil {
-			log.Debugf("JWT token not valid: %s", err)
+			log.Errorf("JWT token not valid: %s", err)
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
