@@ -16,6 +16,8 @@ github.com/mailway-app/config v0.0.0-20210213175635-8ac7d2021f8d h1:o28pT5Et336Q
 github.com/mailway-app/config v0.0.0-20210213175635-8ac7d2021f8d/go.mod h1:gjmRcvcb1UaRgtEMyfASF1XDXB2t0AFNKK+fJ8xM3NQ=
 github.com/mailway-app/config v0.0.0-20210214145136-8a381a1ce901 h1:cP6LytSdHAszaO674+xQQUqUeZkgzNcpbpWjrYX4K9U=
 github.com/mailway-app/config v0.0.0-20210214145136-8a381a1ce901/go.mod h1:wIptp9O+DqeKdh/SfCHLj1eg/nkDNugSGgn0JNY1ag8=
+github.com/mailway-app/config v0.0.0-20210214183823-a092c8c3a426 h1:fDFA6ib0DesgWZRPV7AGOOCyvyVngiX8q522VKuGFOg=
+github.com/mailway-app/config v0.0.0-20210214183823-a092c8c3a426/go.mod h1:wIptp9O+DqeKdh/SfCHLj1eg/nkDNugSGgn0JNY1ag8=
 github.com/mattn/go-sqlite3 v2.0.3+incompatible h1:gXHsfypPkaMZrKbD5209QV9jbUTJKjyR5WD3HYQSd+U=
 github.com/mattn/go-sqlite3 v2.0.3+incompatible/go.mod h1:FPy6KqzDD04eiIsT53CuJW3U88zkxoIYsOqkbpncsNc=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
