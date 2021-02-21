@@ -283,7 +283,9 @@ func main() {
 	r.HandleFunc("/db/domain/{domain}/update/{uuid}", handler.UpdateDomainMail).Methods("PUT")
 	r.HandleFunc("/db/domain/{domain}/logs", handler.GetDomainLogs).Methods("GET")
 	http.Handle("/", r)
-	r.Use(authMiddleware)
+	if !config.CurrConfig.IsInstanceLocal() {
+		r.Use(authMiddleware)
+	}
 	r.Use(loggingMiddleware)
 
 	srv := &http.Server{
@@ -293,7 +295,7 @@ func main() {
 		ReadTimeout:  5 * time.Second,
 	}
 
-	log.Infof("listening on %s", srv.Addr)
+	log.Infof("listening on %s (in mode %s)", srv.Addr, config.CurrConfig.InstanceMode)
 	log.Fatal(srv.ListenAndServe())
 }
 
