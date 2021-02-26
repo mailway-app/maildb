@@ -1,10 +1,15 @@
 package main
 
 import (
+	"bytes"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
+	"net/mail"
 	"os"
 	"path"
 	"strings"
@@ -17,6 +22,12 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
+)
+
+const (
+	// Secret token that webhooks set on the email for us
+	// Used to validate the /db/email/{uuid} endpoint
+	MW_BODY_SECRET_TOKEN = "Mw-Int-Maildb-Secret-Token"
 )
 
 var (
@@ -282,6 +293,7 @@ func main() {
 	r.HandleFunc("/db/domain/{domain}/new/{uuid}", handler.RecordDomainMail).Methods("POST")
 	r.HandleFunc("/db/domain/{domain}/update/{uuid}", handler.UpdateDomainMail).Methods("PUT")
 	r.HandleFunc("/db/domain/{domain}/logs", handler.GetDomainLogs).Methods("GET")
+	r.HandleFunc("/db/email/{uuid}", handler.GetEmail).Queries("token", "{token}").Methods("GET")
 	http.Handle("/", r)
 	if !config.CurrConfig.IsInstanceLocal() {
 		r.Use(authMiddleware)
@@ -312,6 +324,10 @@ func loggingMiddleware(next http.Handler) http.Handler {
 
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/db/email/") {
+			next.ServeHTTP(w, r)
+			return
+		}
 		authorization := r.Header.Get("Authorization")
 		if authorization == "" {
 			log.Warn("missing JWT token")
@@ -352,6 +368,42 @@ func (h MailDB) GetDomainLogs(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write(json)
+}
+
+func (h MailDB) GetEmail(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["uuid"]
+
+	file := fmt.Sprintf("/usr/local/lib/maildb/%s.eml", id)
+	data, err := ioutil.ReadFile(file)
+	if err != nil {
+		log.Infof("could not read email: %s", err)
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("email not found"))
+		return
+	}
+
+	msg, err := mail.ReadMessage(bytes.NewReader(data))
+	if err != nil {
+		log.Errorf("failed to parse message: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("unknown internal server error"))
+		return
+	}
+
+	secretToken := []byte(msg.Header.Get(MW_BODY_SECRET_TOKEN))
+	actual := []byte(r.FormValue("token"))
+	if subtle.ConstantTimeCompare(secretToken, actual) == 0 {
+		log.Info("token is not valid")
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("token mismatch"))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.Copy(w, msg.Body); err != nil {
+		log.Errorf("could not send mail in response: %s", err)
+	}
 }
 
 func (h MailDB) RecordDomainMail(w http.ResponseWriter, r *http.Request) {

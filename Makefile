@@ -12,5 +12,6 @@ $(DIST)/maildb: server.go
 
 .PHONY: deb
 deb: $(DIST)/maildb
+	mkdir -p $(DIST)/usr/local/lib/maildb
 	fpm -n maildb -s dir -t deb --chdir=$(DIST) --version=$(VERSION) $(FPM_ARGS)
 
