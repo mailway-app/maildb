@@ -217,6 +217,7 @@ func getMailsByDomain(db *sql.DB, domain string) ([]Mail, error) {
 	if err != nil {
 		return out, err
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var uuidBytes []byte
@@ -261,6 +262,37 @@ func getMailsByDomain(db *sql.DB, domain string) ([]Mail, error) {
 	return out, nil
 }
 
+func getDomains(db *sql.DB) ([]string, error) {
+	out := make([]string, 0)
+
+	stmt, err := db.Prepare("select distinct domain from mails")
+	if err != nil {
+		return out, err
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.Query()
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var domain string
+		err = rows.Scan(&domain)
+		if err != nil {
+			return out, err
+		}
+		out = append(out, domain)
+	}
+	err = rows.Err()
+	if err != nil {
+		return out, err
+	}
+
+	return out, nil
+}
+
 func main() {
 	if err := config.Init(); err != nil {
 		log.Fatalf("failed to init config: %s", err)
@@ -290,9 +322,11 @@ func main() {
 	r := mux.NewRouter()
 	handler := MailDB{db}
 
+	r.HandleFunc("/db/domains", handler.GetDomains).Methods("GET")
 	r.HandleFunc("/db/domain/{domain}/new/{uuid}", handler.RecordDomainMail).Methods("POST")
 	r.HandleFunc("/db/domain/{domain}/update/{uuid}", handler.UpdateDomainMail).Methods("PUT")
 	r.HandleFunc("/db/domain/{domain}/logs", handler.GetDomainLogs).Methods("GET")
+	r.HandleFunc("/db/domain/{domain}/aliases", handler.GetDomainAliases).Methods("GET")
 	r.HandleFunc("/db/email/{uuid}", handler.GetEmail).Queries("token", "{token}").Methods("GET")
 	http.Handle("/", r)
 	if !config.CurrConfig.IsInstanceLocal() {
@@ -361,6 +395,43 @@ func (h MailDB) GetDomainLogs(w http.ResponseWriter, r *http.Request) {
 			From:   mail.From,
 			To:     mail.To,
 		}
+	}
+
+	json, err := json.Marshal(out)
+	check(err)
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(json)
+}
+
+func (h MailDB) GetDomainAliases(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	domain := vars["domain"]
+
+	mails, err := getMailsByDomain(h.db, domain)
+	check(err)
+
+	set := make(map[string]bool)
+
+	for _, row := range mails {
+		tos, err := mail.ParseAddressList(row.To)
+		if err != nil {
+			log.Warnf("failed to parse address: %s", err)
+			continue
+		}
+
+		for _, to := range tos {
+			if strings.HasSuffix(to.Address, domain) {
+				set[to.Address] = true
+			}
+		}
+	}
+
+	out := make([]string, len(set))
+	i := 0
+	for value, _ := range set {
+		out[i] = value
+		i++
 	}
 
 	json, err := json.Marshal(out)
@@ -467,6 +538,22 @@ func (h MailDB) UpdateDomainMail(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(""))
+}
+
+func (h MailDB) GetDomains(w http.ResponseWriter, r *http.Request) {
+	domains, err := getDomains(h.db)
+	if err != nil {
+		log.Errorf("failed to get domains: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("unknown internal server error"))
+		return
+	}
+
+	json, err := json.Marshal(domains)
+	check(err)
+
+	w.WriteHeader(http.StatusOK)
+	w.Write(json)
 }
 
 func check(err error) {
